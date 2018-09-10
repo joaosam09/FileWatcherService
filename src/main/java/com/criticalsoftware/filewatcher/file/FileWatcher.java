@@ -22,7 +22,7 @@ public class FileWatcher
     public FileWatcher(String directoryToWatch) throws IOException
     {    	    	  
 		watchService = FileSystems.getDefault().newWatchService();
-		Path path = Paths.get(System.getProperty(directoryToWatch));
+		Path path = Paths.get(directoryToWatch);
 		path.register(watchService, StandardWatchEventKinds.ENTRY_CREATE);						        				    
     }
     
@@ -34,8 +34,7 @@ public class FileWatcher
         	WatchKey key;
 			while ((key = watchService.take()) != null) {
 			    for (WatchEvent<?> event : key.pollEvents()) {
-			        LOGGER.info("New file detected: " + event.context());	        
-			        
+			        LOGGER.info("New file detected: " + event.context());			        
 			    }
 			    key.reset();
 			}
