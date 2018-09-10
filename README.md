@@ -1,0 +1,2 @@
+SpringOperationsService
+Simple Spring webservice with math operations
