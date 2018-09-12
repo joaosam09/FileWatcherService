@@ -1,4 +1,4 @@
-package com.criticalsoftware.filewatcher.file;
+package com.criticalsoftware.filewatcher.csv;
 
 import java.io.IOException;
 import java.nio.file.*;
@@ -13,12 +13,12 @@ import org.slf4j.LoggerFactory;
  * @author João Santos
  * @version 1.0
  */
-public class FileWatcher 
+public class CsvFileWatcher 
 {	
 	private final Logger LOGGER = LoggerFactory.getLogger("ApplicationFileLogger");
 	private WatchService watchService;
 		
-    public FileWatcher(String directoryToWatch) throws IOException
+    public CsvFileWatcher(String directoryToWatch) throws IOException
     {    	    	      	    	
 		watchService = FileSystems.getDefault().newWatchService();
 		Path path = Paths.get(directoryToWatch);
@@ -39,8 +39,8 @@ public class FileWatcher
 			    		
 			    		LOGGER.info("New file detected: " + fullPath);
     			        
-				        try {
-							FileProcessor.processFile(fullPath);
+				        try {				        	
+							CsvFileHandler.processFile(fullPath);
 						} catch (IOException e) {
 							LOGGER.error("Error processing file " + event.context());
 						}

@@ -5,7 +5,7 @@ import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.criticalsoftware.filewatcher.file.FileWatcher;
+import com.criticalsoftware.filewatcher.csv.CsvFileWatcher;
 
 /**
  * Class responsible for detecting new files in a directory.
@@ -27,7 +27,7 @@ public class MainApp
         }
     	
     	try {
-			FileWatcher newFileWatcher = new FileWatcher(args[0]);
+			CsvFileWatcher newFileWatcher = new CsvFileWatcher(args[0]);
 			
 			if(newFileWatcher != null)
 				newFileWatcher.start();

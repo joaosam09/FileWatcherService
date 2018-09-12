@@ -1,4 +1,6 @@
-package com.criticalsoftware.filewatcher.operation;
+package com.criticalsoftware.filewatcher.csv;
+
+import com.opencsv.bean.CsvBindByName;
 
 /**
  * Class representing an operation request.
@@ -7,16 +9,21 @@ package com.criticalsoftware.filewatcher.operation;
  * @author João Santos
  * @version 1.0
  */
-public class OperationRequest {	
-	private double value1;	
+public class CsvOperationRequest {
+	@CsvBindByName(column = "value1")
+	private double value1;
+	
+	@CsvBindByName(column = "value2")
 	private double value2;	
+	
+	@CsvBindByName(column = "operation")
 	private String operation;
 	
-	public OperationRequest() {
+	public CsvOperationRequest() {
 		super();		
 	}	
 		
-	public OperationRequest(double value1, double value2, String operation) {
+	public CsvOperationRequest(double value1, double value2, String operation) {
 		super();
 		this.value1 = value1;
 		this.value2 = value2;
