@@ -10,9 +10,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class CsvRecordHandler implements Runnable {
 	
 	private final Logger LOGGER = LoggerFactory.getLogger("ApplicationFileLogger");
-	private BlockingQueue<CsvOperationRequest> queue;
+	private BlockingQueue<Object> queue;
 
-	public CsvRecordHandler(BlockingQueue<CsvOperationRequest> queue) {
+	public CsvRecordHandler(BlockingQueue<Object> queue) {
         this.queue = queue;        
     }
 	
@@ -20,37 +20,38 @@ public class CsvRecordHandler implements Runnable {
 	public void run() {
 		try {
             while (true) {
-            	handleOperationRecord(queue.take());                
+            	Object recordToHandle = queue.take();
+            	if(recordToHandle.getClass() == CSVRecord.class) {
+            		handleOperationRecord((CSVRecord) recordToHandle);
+            	}else {
+        			LOGGER.info("TERMINATED JOB");
+        			return;        		
+            	}                   	
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
 	}
 	
-	private void handleOperationRecord(CsvOperationRequest csvRequest) {
-		if(csvRequest != null) {
-			try {
-//				double value1 = Double.parseDouble(csvRecord.get("value1"));
-//		    	double value2 = Double.parseDouble(csvRecord.get("value2"));
-//		    	String operation = csvRecord.get("operation");
-//		    	
-//		    	CsvOperationRequest request = new CsvOperationRequest(value1, value2, operation);
-		    	LOGGER.info("READ: " + "value1=" + csvRequest.getValue1()
-		    						 + " value2=" + csvRequest.getValue2()
-									 + " operation=" + csvRequest.getOperation());	    	
-		    	
-//		    	ObjectMapper objectMapper = new ObjectMapper();	    	
-//		    	String jsonRequest = objectMapper.writeValueAsString(request);
-		    	
-			} catch(Exception e) {
-				LOGGER.error("Error processing record: value1=" + csvRequest.getValue1()
-													+ ";value2=" + csvRequest.getValue2()
-													+ ";operation=" + csvRequest.getOperation());
-				//WRITE FAILURE TO INVALID FOLDER
-			}	
-		}else {
-			LOGGER.info("TERMINATED JOB");
-			return;
-		}			
+	private void handleOperationRecord(CSVRecord csvRecord) {				
+		try {				
+			double value1 = Double.parseDouble(csvRecord.get("value1"));
+	    	double value2 = Double.parseDouble(csvRecord.get("value2"));
+	    	String operation = csvRecord.get("operation");
+	    	
+	    	CsvOperationRequest csvRequest = new CsvOperationRequest(value1, value2, operation);
+	    	LOGGER.info("READ: " + "value1=" + csvRequest.getValue1()
+	    						 + " value2=" + csvRequest.getValue2()
+								 + " operation=" + csvRequest.getOperation());	    	
+	    	
+	    	ObjectMapper objectMapper = new ObjectMapper();	    	
+	    	String jsonRequest = objectMapper.writeValueAsString(csvRequest);
+	    	
+		} catch(Exception e) {
+			LOGGER.error("Error processing record: value1=" + csvRecord.get("value1")
+												+ ";value2=" + csvRecord.get("value2")
+												+ ";operation=" + csvRecord.get("operation"));
+			//WRITE FAILURE TO INVALID FOLDER
+		}
 	}
 }
