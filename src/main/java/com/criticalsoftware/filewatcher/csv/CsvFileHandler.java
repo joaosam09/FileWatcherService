@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import com.opencsv.bean.CsvToBean;
 import com.opencsv.bean.CsvToBeanBuilder;
+import com.opencsv.exceptions.CsvDataTypeMismatchException;
 
 public class CsvFileHandler {
 
@@ -34,13 +35,15 @@ public class CsvFileHandler {
                 									   .build();
 		
 		Iterator<CsvOperationRequest> csvIterator = csvToBean.iterator();
-
-		while (csvIterator.hasNext()) {
+		
+		while (csvIterator.hasNext()) {			
 	    	try {
 				waitingQueue.put(csvIterator.next());
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				LOGGER.error("Thread interrupted while populating queue: " + e.getMessage());
+			} catch (Exception e) {				
+				LOGGER.error("Invalid operation request info: " + e.getMessage());
 			}	    	    	                   
 	    }
 	    
