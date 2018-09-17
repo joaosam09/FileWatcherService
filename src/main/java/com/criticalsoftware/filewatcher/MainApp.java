@@ -21,16 +21,14 @@ public class MainApp
 	
     public static void main( String[] args )
     {    	    	
-    	if (args.length != 1) {
-            System.err.println("Usage: java FileWatcherService <directory_to_watch>");
+    	if (args.length != 2) {
+            System.err.println("Usage: java FileWatcherService <input_folder> <output_folder>");
             System.exit(1);
         }
     	
     	try {
-			CsvFileWatcher newFileWatcher = new CsvFileWatcher(args[0]);
-			
-			if(newFileWatcher != null)
-				newFileWatcher.start();
+			CsvFileWatcher newFileWatcher = new CsvFileWatcher(args[0], args[1]);
+			newFileWatcher.start();
 			
     	} catch (IOException e) {			
 			LOGGER.error("Error registering new file watcher: " + e.getMessage());

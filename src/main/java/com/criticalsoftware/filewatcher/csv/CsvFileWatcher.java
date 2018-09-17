@@ -17,11 +17,14 @@ public class CsvFileWatcher
 {	
 	private final Logger LOGGER = LoggerFactory.getLogger("ApplicationFileLogger");
 	private WatchService watchService;
-		
-    public CsvFileWatcher(String directoryToWatch) throws IOException
+	private String outputFolder;
+	
+    public CsvFileWatcher(String inputFolder, String outputFolder) throws IOException
     {    	    	      	    	
+    	this.outputFolder = outputFolder;
+    	
 		watchService = FileSystems.getDefault().newWatchService();
-		Path path = Paths.get(directoryToWatch);
+		Path path = Paths.get(inputFolder);
 		path.register(watchService, StandardWatchEventKinds.ENTRY_CREATE);						        				    
     }
     
@@ -39,11 +42,8 @@ public class CsvFileWatcher
 			    		
 			    		LOGGER.info("New file detected: " + fullPath);
     			        
-				        try {				        	
-							CsvFileHandler.processFile(fullPath);
-						} catch (IOException e) {
-							LOGGER.error("Error processing file " + event.context());
-						}
+			        	Thread newFileHandlerThread = new Thread( new CsvFileHandler(fullPath, outputFolder));
+			        	newFileHandlerThread.start();						
 			    	}			        
 			    }
 			    key.reset();
