@@ -1,7 +1,5 @@
 package com.criticalsoftware.filewatcher.csv;
 
-import com.opencsv.bean.CsvBindByName;
-
 /**
  * Class representing an operation request.
  * Contains 2 values and the operation to be calculated.
@@ -9,14 +7,9 @@ import com.opencsv.bean.CsvBindByName;
  * @author João Santos
  * @version 1.0
  */
-public class CsvOperationRequest {
-	@CsvBindByName(column = "value1")
-	private double value1;
-	
-	@CsvBindByName(column = "value2")
-	private double value2;	
-	
-	@CsvBindByName(column = "operation")
+public class CsvOperationRequest {	
+	private double value1;	
+	private double value2;		
 	private String operation;
 	
 	public CsvOperationRequest() {

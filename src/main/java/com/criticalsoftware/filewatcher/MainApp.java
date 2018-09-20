@@ -1,9 +1,8 @@
 package com.criticalsoftware.filewatcher;
 
 import java.io.IOException;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import com.criticalsoftware.filewatcher.csv.CsvFileWatcher;
 
@@ -14,10 +13,9 @@ import com.criticalsoftware.filewatcher.csv.CsvFileWatcher;
  * @author João Santos
  * @version 1.0
  */
-public class MainApp 
+public class MainApp
 {
-	//Logger declared in resources/logback.xml
-	private static final Logger LOGGER = LoggerFactory.getLogger("ApplicationFileLogger");
+	private static final Logger LOGGER = Logger.getLogger(MainApp.class.toString());
 	
     public static void main( String[] args )
     {    	    	
@@ -31,7 +29,7 @@ public class MainApp
 			newFileWatcher.start();
 			
     	} catch (IOException e) {			
-			LOGGER.error("Error registering new file watcher: " + e.getMessage());
+			LOGGER.log(Level.SEVERE, "Error registering new file watcher: " + e.getMessage());
 		}  
     }    
 }

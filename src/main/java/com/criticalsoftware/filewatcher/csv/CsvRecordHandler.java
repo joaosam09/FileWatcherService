@@ -2,33 +2,34 @@ package com.criticalsoftware.filewatcher.csv;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.concurrent.BlockingQueue;
+import java.util.logging.Logger;
 
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.criticalsoftware.filewatcher.webclient.HttpResponse;
 import com.criticalsoftware.filewatcher.webclient.OperationResponse;
 import com.criticalsoftware.filewatcher.webclient.RestWebClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import java.net.HttpURLConnection;
-
 public class CsvRecordHandler implements Runnable {
 	
-	private final Logger LOGGER = LoggerFactory.getLogger("ApplicationFileLogger");
-	private final String calculateServiceURL = "http://localhost:8090/calculate";
+	private final Logger LOGGER = Logger.getLogger(CsvRecordHandler.class.toString());
+	private final String calculateServiceURL = "http://localhost:8090/calculate";	
 	private BlockingQueue<Object> queue;
 	private String fileName;
 	private String outputFolder;
 	private RestWebClient webClient = new RestWebClient();	
-
+	private Object fileLock = new Object();
+	
 	public CsvRecordHandler(BlockingQueue<Object> queue, String fileName, String outputFolder) {
         this.queue = queue;  
         this.fileName = fileName;
@@ -42,8 +43,7 @@ public class CsvRecordHandler implements Runnable {
             	Object recordToHandle = queue.take();
             	if(recordToHandle.getClass() == CSVRecord.class) {
             		handleOperationRecord((CSVRecord) recordToHandle);
-            	}else {
-        			LOGGER.info("TERMINATED JOB");
+            	}else {        			
         			return;        		
             	}                   	
             }
@@ -53,35 +53,46 @@ public class CsvRecordHandler implements Runnable {
 	}
 	
 	private void handleOperationRecord(CSVRecord csvRecord) {
-		boolean recordHasError = false;
+		boolean recordHasError = true;
 		
 		try {				
 			double value1 = Double.parseDouble(csvRecord.get("value1"));
 	    	double value2 = Double.parseDouble(csvRecord.get("value2"));
-	    	String operation = csvRecord.get("operation");
+	    	String operation = csvRecord.get("operation");	    	
+	    	CsvOperationRequest csvRequest = new CsvOperationRequest(value1, value2, operation);	
 	    	
-	    	CsvOperationRequest csvRequest = new CsvOperationRequest(value1, value2, operation);	    		    		    	
 	    	ObjectMapper objectMapper = new ObjectMapper();	    	
-	    	String jsonRequest = objectMapper.writeValueAsString(csvRequest);	    	
-	    	HttpResponse response = webClient.sendPostRequest(calculateServiceURL, jsonRequest);
+	    	String jsonRequest = objectMapper.writeValueAsString(csvRequest);
 	    	
-	    	if(response.getStatusCode() != HttpURLConnection.HTTP_OK) {
-	    		recordHasError = true;
-	    	} else {
-	    		OperationResponse operationResponse = objectMapper.readValue(response.getBody(), OperationResponse.class);
+	    	try {
+	    		HttpResponse response = webClient.sendPostRequest(calculateServiceURL, jsonRequest);
 	    		
-	    		double result = operationResponse.getResult();
-	    		LOGGER.info("RESULT: " + result);
-	    		//WRITE VALUES IN THE DATABASE
+	    		if(response.getStatusCode() == HttpURLConnection.HTTP_OK) {		    		
+		    		OperationResponse operationResponse = objectMapper.readValue(response.getBody(), OperationResponse.class);
+		    		
+		    		double result = operationResponse.getResult();
+		    		LOGGER.info("RESULT: " + result);		    		
+		    		
+		    		//WRITE VALUES IN THE DATABASE
+		    		
+		    		recordHasError = false;
+		    	}
+	    	} catch(MalformedURLException e){	    		
+	    		LOGGER.info("Malformed URL " + calculateServiceURL);
+	    		
+	    	} catch(IOException e){	    		
+	    		LOGGER.info("Error sending post request: " + e.getMessage());
 	    	}	
-	    	
-		} catch(Exception e) {
-			recordHasError = true;
-			LOGGER.error("Error handling record from file \"" + fileName + "\":"
-												+ "	value1=" + csvRecord.get("value1")
-												+ " value2=" + csvRecord.get("value2")
-												+ " operation=" + csvRecord.get("operation") 
-												+ " error message=" + e.getMessage());						
+		
+		} catch(NumberFormatException e){    		
+    		LOGGER.info("Error sending post request: " + e.getMessage());
+    			
+		} catch(Exception e) {						
+			LOGGER.info("Error handling record from file \"" + fileName + "\":" 
+																		+ " value1=" + csvRecord.get("value1")
+																		+ " value2=" + csvRecord.get("value2")
+																		+ " operation=" + csvRecord.get("operation") 
+																		+ " error message=" + e.getMessage());						
 		}
 		
 		if(recordHasError)
@@ -89,24 +100,27 @@ public class CsvRecordHandler implements Runnable {
 	}
 	
 	private void writeRecordInErrorFile(CSVRecord csvRecord) {
-		String errorFileName = fileName.split("\\.")[0] + "_Unresolved.csv";
-		
-		try {
-			Path errorPath = Paths.get(outputFolder + "\\UnresolvedRequests");						
-			if(!Files.exists(errorPath))
-				Files.createDirectory(errorPath);
-										
-			String newFilePath = errorPath + "\\" + errorFileName;
-			BufferedWriter writer = Files.newBufferedWriter(Paths.get(newFilePath));
-            CSVPrinter csvPrinter = new CSVPrinter(writer, CSVFormat.DEFAULT
-		                    							   .withHeader("value1", "value2", "operation")
-		                    							   .withDelimiter(';'));
-            
-            csvPrinter.printRecord(csvRecord.get("value1"), csvRecord.get("value2"), csvRecord.get("operation"));              
-            csvPrinter.close();
-            
-        } catch (IOException e) {
-        	LOGGER.error("Error writing unresolved record on file " + errorFileName + ":" + e.getMessage());   
-		}
+		synchronized(fileLock) {					
+			try {
+				Path errorPath = Paths.get(outputFolder + "\\UnresolvedRequests");						
+				if(!Files.exists(errorPath))
+					Files.createDirectory(errorPath);
+											
+				String newFilePath = errorPath + "\\" + fileName;
+				
+				CSVFormat csvFormat;
+				csvFormat = !Files.exists(Paths.get(newFilePath)) ? CSVFormat.DEFAULT.withHeader("value1", "value2", "operation").withDelimiter(';')
+																  : CSVFormat.DEFAULT.withDelimiter(';');				
+				
+				BufferedWriter writer = Files.newBufferedWriter(Paths.get(newFilePath), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+	            CSVPrinter csvPrinter = new CSVPrinter(writer, csvFormat);
+	            
+	            csvPrinter.printRecord(csvRecord.get("value1"), csvRecord.get("value2"), csvRecord.get("operation"));              
+	            csvPrinter.close();
+	            
+	        } catch (IOException e) {
+	        	LOGGER.info("Error writing unresolved record on file " + fileName + ":" + e.getMessage());   
+			}
+		}		
 	}
 }

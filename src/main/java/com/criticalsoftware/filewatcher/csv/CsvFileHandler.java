@@ -4,20 +4,22 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class CsvFileHandler implements Runnable {
 
-	private final static Logger LOGGER = LoggerFactory.getLogger("ApplicationFileLogger");
+	private static final Logger LOGGER = Logger.getLogger(CsvFileHandler.class.toString());
 	private final int QUEUECAPACITY = 1000;
-	private BlockingQueue<Object> waitingQueue = new LinkedBlockingQueue<>(QUEUECAPACITY);
 	private int NR_THREADS = Runtime.getRuntime().availableProcessors();
+	private BlockingQueue<Object> waitingQueue = new LinkedBlockingQueue<>(QUEUECAPACITY);	
 	private Path filePath;
 	private String outputFolder;
 	
@@ -27,13 +29,10 @@ public class CsvFileHandler implements Runnable {
     }
 	
 	@Override
-	public void run() {
-		BufferedReader reader;
-		CSVParser csvParser;
-		
+	public void run() {		
 		try {
-			reader = Files.newBufferedReader(filePath);
-			csvParser = new CSVParser(reader, CSVFormat.DEFAULT											
+			BufferedReader reader = Files.newBufferedReader(filePath);
+			CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT											
 											  .withHeader("value1", "value2", "operation")
 											  .withSkipHeaderRecord()                							
 											  .withIgnoreHeaderCase()
@@ -45,14 +44,7 @@ public class CsvFileHandler implements Runnable {
 			//Starts the record handler threads (they will wait until the queue has records)
 		    for (int j = 0; j < NR_THREADS; j++) {	    	
 		        Thread newRecordHandlerThread = new Thread(new CsvRecordHandler(waitingQueue, fileName, outputFolder));
-		        newRecordHandlerThread.start();
-		        
-//		        try {
-//					newRecordHandlerThread.join();
-//				} catch (InterruptedException e) {
-//					LOGGER.error("Thread interrupted while handling records: " + e.getMessage());
-//					Thread.currentThread().interrupt();				
-//				}
+		        newRecordHandlerThread.start();		        
 		    }	
 		    
 		    //Starts inserting records into the queue
@@ -60,7 +52,7 @@ public class CsvFileHandler implements Runnable {
 		    	try {
 					waitingQueue.put(csvRecord);
 				} catch (InterruptedException e) {
-					LOGGER.error("Thread interrupted while populating queue: " + e.getMessage());
+					LOGGER.log(Level.SEVERE, "Thread interrupted while populating queue: " + e.getMessage());
 					Thread.currentThread().interrupt();					
 				}	    	    	                   
 		    }
@@ -70,16 +62,27 @@ public class CsvFileHandler implements Runnable {
 		    	try {
 					waitingQueue.put(new Object());
 				} catch (InterruptedException e) {
-					LOGGER.error("Thread interrupted while inserting task ending records: " + e.getMessage());
+					LOGGER.log(Level.SEVERE, "Thread interrupted while inserting task ending records: " + e.getMessage());
 					Thread.currentThread().interrupt();				
 				};
 		    }		    	        	    
 		    
 		    csvParser.close();
-		    reader.close();	
+		    reader.close();
+		    
+		    moveFileToOutputDirectory();
 		    
 		} catch (IOException e) {
-			LOGGER.error("Error handling file \"" + filePath + "\": " + e.getMessage());					
+			LOGGER.log(Level.SEVERE, "Error handling file \"" + filePath + "\": " + e.getMessage());					
 		}									
-	}		
+	}
+	
+	private void moveFileToOutputDirectory() {								
+		try {
+			Files.move(filePath, Paths.get(outputFolder + "\\" + filePath.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);            
+        } catch (IOException e) {
+        	LOGGER.log(Level.SEVERE, "Error moving file " + filePath.getFileName().toString() + " to output directory: " + e.getMessage());   
+		}
+		
+	}
 }

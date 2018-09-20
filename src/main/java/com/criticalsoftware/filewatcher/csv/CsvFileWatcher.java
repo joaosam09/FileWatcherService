@@ -2,9 +2,8 @@ package com.criticalsoftware.filewatcher.csv;
 
 import java.io.IOException;
 import java.nio.file.*;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Class responsible for detecting new files in a directory.
@@ -15,7 +14,7 @@ import org.slf4j.LoggerFactory;
  */
 public class CsvFileWatcher 
 {	
-	private final Logger LOGGER = LoggerFactory.getLogger("ApplicationFileLogger");
+	private final Logger LOGGER = Logger.getLogger(CsvFileWatcher.class.toString());
 	private WatchService watchService;
 	private String outputFolder;
 	
@@ -33,6 +32,8 @@ public class CsvFileWatcher
      */
     public void start() {
         try {
+        	LOGGER.log(Level.INFO, "File watcher started...");
+        	
         	WatchKey key;
 			while ((key = watchService.take()) != null) {
 			    for (WatchEvent<?> event : key.pollEvents()) {
@@ -49,7 +50,7 @@ public class CsvFileWatcher
 			    key.reset();
 			}
 		} catch (InterruptedException e) {
-			LOGGER.error("Watch service interrupted: " + e.getMessage());
+			LOGGER.log(Level.SEVERE, "Watch service interrupted: " + e.getMessage());
 		}
     }    
 }
