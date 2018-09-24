@@ -21,13 +21,13 @@ public class CsvRecordHandler implements Runnable {
 	
 	private static final Logger LOGGER = LoggerFactory.getLogger("ApplicationFileLogger");
 	private final String calculateServiceURL = "http://localhost:8090/calculate";	
-	private BlockingQueue<Object> queue;	
+	private BlockingQueue<Object> recordQueue;	
 	private CsvFileHandler fileHandler;
 	private RestWebClient webClient = new RestWebClient();			
 	private PostgresqlDbClient dbClient = new PostgresqlDbClient();	
 	
 	public CsvRecordHandler(CsvFileHandler fileHandler, BlockingQueue<Object> queue) {
-        this.queue = queue;          
+        this.recordQueue = queue;          
         this.fileHandler = fileHandler;
     }
 	
@@ -35,10 +35,14 @@ public class CsvRecordHandler implements Runnable {
 	public void run() {
 		try {
             while (true) {
-            	Object recordToHandle = queue.take();
+            	Object recordToHandle = recordQueue.take();
             	if(recordToHandle.getClass() == CSVRecord.class) {
             		handleOperationRecord((CSVRecord) recordToHandle);
-            	}else {                		                   		
+            	}else {
+            		synchronized (fileHandler) {
+            			notifyAll();
+					}
+            		
         			return; //JOB TERMINATED    		
             	}                   	
             }

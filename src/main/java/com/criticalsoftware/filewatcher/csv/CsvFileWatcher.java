@@ -3,6 +3,9 @@ package com.criticalsoftware.filewatcher.csv;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,6 +23,9 @@ public class CsvFileWatcher
 	private WatchService watchService;
 	private String inputFolder;
 	private String outputFolder;
+	private final int QUEUECAPACITY = 100;
+	private int maxFileHandlers = 5;
+	private BlockingQueue<Path> fileQueue = new LinkedBlockingQueue<>(QUEUECAPACITY);		
 	
     public CsvFileWatcher(String inputFolder, String outputFolder) throws IOException
     {    	    	      	    	
@@ -46,7 +52,7 @@ public class CsvFileWatcher
         try {
         	LOGGER.info("File watcher started...");
         	
-        	handleExistingFiles();
+        	queueExistingFiles();
         	
         	WatchKey key;
 			while ((key = watchService.take()) != null) {
@@ -55,9 +61,11 @@ public class CsvFileWatcher
 			    		Path dir = (Path)key.watchable();
 			    		Path fullPath = dir.resolve((Path) event.context());
 			    		
-			    		LOGGER.info("New file detected: " + fullPath);
+			    		fileQueue.put(fullPath);
+			    		LOGGER.info("New file queued: " + fullPath);
     			        
-			        	Thread newFileHandlerThread = new Thread(new CsvFileHandler(fullPath, outputFolder));
+			    		
+			        	Thread newFileHandlerThread = new Thread(new CsvFileHandler(fileQueue, outputFolder));
 			        	newFileHandlerThread.start();		
 			    	}			        
 			    }
@@ -69,15 +77,18 @@ public class CsvFileWatcher
     }    
     
     /**
-     * Handles the existing files in the input directory.
+     * Queues the existing files of the input directory.
      */
-    public void handleExistingFiles() {       	    	     
+    private void queueExistingFiles() {       	    	     
     	File dir = new File(inputFolder);        	  
 	    for (File existingFile : dir.listFiles()) {
-	    	LOGGER.info("Handling file: " + existingFile.getPath());
-	    	
-	    	Thread newFileHandlerThread = new Thread(new CsvFileHandler(existingFile.toPath(), outputFolder));
-        	newFileHandlerThread.start();	
+	    	try {
+				fileQueue.put(existingFile.toPath());
+				LOGGER.info("Queued file: " + existingFile.getPath());	    	
+				
+			} catch (InterruptedException e) {
+				LOGGER.error("Population of file queue interrupted");
+			}	    	
 	    }        	    
     }   
 }

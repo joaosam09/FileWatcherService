@@ -21,29 +21,47 @@ import org.apache.commons.csv.CSVRecord;
 public class CsvFileHandler implements Runnable {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger("ApplicationFileLogger");
-	private final int QUEUECAPACITY = 100;
-	private int NR_THREADS = Runtime.getRuntime().availableProcessors();
-	private BlockingQueue<Object> waitingQueue = new LinkedBlockingQueue<>(QUEUECAPACITY);	
-	private Path filePath;
+	private final int QUEUECAPACITY = 1000;	
+	private BlockingQueue<Path> fileQueue;
+	private BlockingQueue<Object> recordQueue = new LinkedBlockingQueue<>(QUEUECAPACITY);	
 	private String fileName;
 	private String outputFolder;
 	
-	public CsvFileHandler(Path filePath, String outputFolder) {
-        this.filePath = filePath;  
-        this.fileName = filePath.getFileName().toString();
+	public CsvFileHandler(BlockingQueue<Path> fileQueue, String outputFolder) {
+        this.fileQueue = fileQueue;          
         this.outputFolder = outputFolder;
     }
 	
-	public String getFileName() {
+	public synchronized String getFileName() {
 		return fileName;
 	}
 
 	@Override
 	public void run() {		
+		try {
+            while (true) {
+            	Path filePath = fileQueue.take();
+            	if(filePath != null) {
+            		handleFile(filePath);
+            	}else {                		                   		
+            		//notifyAll();
+            		
+            		LOGGER.info("JOB TERMINATED");
+        			return; //JOB TERMINATED    		
+            	}                   	
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }								
+	}
+	
+	private void handleFile(Path filePath) {
 		BufferedReader reader = null;
 		CSVParser csvParser = null;
-		
+					
 		try {
+			this.fileName = filePath.getFileName().toString();
+			
 			reader = Files.newBufferedReader(filePath);
 			csvParser = new CSVParser(reader, CSVFormat.DEFAULT											
 											  .withHeader("value1", "value2", "operation")
@@ -51,17 +69,19 @@ public class CsvFileHandler implements Runnable {
 											  .withIgnoreHeaderCase()
 											  .withDelimiter(';')
 											  .withTrim());
-						
+									
+			int nrThreads = Runtime.getRuntime().availableProcessors();
+			
 			//Starts the record handler threads (they will wait until the queue has records)
-		    for (int j = 0; j < NR_THREADS; j++) {	    	
-		        Thread newRecordHandlerThread = new Thread(new CsvRecordHandler(this, waitingQueue));
+		    for (int j = 0; j < nrThreads; j++) {	    	
+		        Thread newRecordHandlerThread = new Thread(new CsvRecordHandler(this, recordQueue));
 		        newRecordHandlerThread.start();		        
 		    }	
 		    
 		    //Starts inserting records into the queue
 			for (Object csvRecord : csvParser) {			
 		    	try {
-					waitingQueue.put(csvRecord);
+		    		recordQueue.put(csvRecord);
 				} catch (InterruptedException e) {
 					LOGGER.error("Thread interrupted while populating queue: " + e.getMessage());
 					Thread.currentThread().interrupt();					
@@ -69,16 +89,28 @@ public class CsvFileHandler implements Runnable {
 		    }
 		    
 		    //For each thread, inserts an empty record to finish execution gracefully
-		    for (int i = 0; i < NR_THREADS; i++) {
+		    for (int i = 0; i < nrThreads; i++) {
 		    	try {
-					waitingQueue.put(new Object());
+		    		recordQueue.put(new Object());
 				} catch (InterruptedException e) {
 					LOGGER.error("Thread interrupted while inserting task ending records: " + e.getMessage());
 					Thread.currentThread().interrupt();				
 				};
 		    }		    	        	    		    	    
 		    
-		    moveFileToOutputDirectory();
+		    //Waits for the threads to finish handling the records
+		    synchronized (this) {
+		    	while (recordQueue.size() > 0) {
+			    	try {
+						wait();
+					} catch (InterruptedException e) {
+						LOGGER.error("Thread interrupted while waiting for record handlers to finish the job: " + e.getMessage());
+						Thread.currentThread().interrupt();	
+					}
+			    }
+			}		    
+		    		    
+		    moveFileToOutputDirectory(filePath);
 		    
 		} catch (IOException e) {
 			LOGGER.error("Error handling file \"" + filePath + "\": " + e.getMessage());			
@@ -94,12 +126,13 @@ public class CsvFileHandler implements Runnable {
 			} catch (IOException e) {
 				LOGGER.error("Error closing file resources: " + e.getMessage());
 			}		    
-		}									
+		}						
 	}
 	
-	private void moveFileToOutputDirectory() {								
+	private void moveFileToOutputDirectory(Path filePath) {								
 		try {
-			Files.move(filePath, Paths.get(outputFolder + "\\" + fileName), StandardCopyOption.REPLACE_EXISTING);            
+			LOGGER.info("MOVING FILE TO OUTPUT DIRECTORY");
+			Files.move(filePath, Paths.get(outputFolder + "\\" + fileName), StandardCopyOption.REPLACE_EXISTING);         			
         } catch (IOException e) {
         	LOGGER.error("Error moving file " + fileName + " to output directory: " + e.getMessage());   
 		}		
