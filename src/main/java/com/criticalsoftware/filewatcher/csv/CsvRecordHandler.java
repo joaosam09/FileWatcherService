@@ -1,39 +1,34 @@
 package com.criticalsoftware.filewatcher.csv;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
+import java.util.Date;
 import java.util.concurrent.BlockingQueue;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
 
+import com.criticalsoftware.filewatcher.dbclient.PostgresqlDbClient;
 import com.criticalsoftware.filewatcher.webclient.HttpResponse;
 import com.criticalsoftware.filewatcher.webclient.OperationResponse;
 import com.criticalsoftware.filewatcher.webclient.RestWebClient;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class CsvRecordHandler implements Runnable {
 	
-	private final Logger LOGGER = Logger.getLogger(CsvRecordHandler.class.toString());
+	private static final Logger LOGGER = LoggerFactory.getLogger("ApplicationFileLogger");
 	private final String calculateServiceURL = "http://localhost:8090/calculate";	
-	private BlockingQueue<Object> queue;
-	private String fileName;
-	private String outputFolder;
-	private RestWebClient webClient = new RestWebClient();	
-	private Object fileLock = new Object();
+	private BlockingQueue<Object> queue;	
+	private CsvFileHandler fileHandler;
+	private RestWebClient webClient = new RestWebClient();			
+	private PostgresqlDbClient dbClient = new PostgresqlDbClient();	
 	
-	public CsvRecordHandler(BlockingQueue<Object> queue, String fileName, String outputFolder) {
-        this.queue = queue;  
-        this.fileName = fileName;
-        this.outputFolder = outputFolder;
+	public CsvRecordHandler(CsvFileHandler fileHandler, BlockingQueue<Object> queue) {
+        this.queue = queue;          
+        this.fileHandler = fileHandler;
     }
 	
 	@Override
@@ -43,8 +38,8 @@ public class CsvRecordHandler implements Runnable {
             	Object recordToHandle = queue.take();
             	if(recordToHandle.getClass() == CSVRecord.class) {
             		handleOperationRecord((CSVRecord) recordToHandle);
-            	}else {        			
-        			return;        		
+            	}else {                		                   		
+        			return; //JOB TERMINATED    		
             	}                   	
             }
         } catch (InterruptedException e) {
@@ -52,28 +47,31 @@ public class CsvRecordHandler implements Runnable {
         }
 	}
 	
-	private void handleOperationRecord(CSVRecord csvRecord) {
+	private void handleOperationRecord(CSVRecord csvRecord) {						
 		boolean recordHasError = true;
 		
-		try {				
+		try {
 			double value1 = Double.parseDouble(csvRecord.get("value1"));
 	    	double value2 = Double.parseDouble(csvRecord.get("value2"));
 	    	String operation = csvRecord.get("operation");	    	
-	    	CsvOperationRequest csvRequest = new CsvOperationRequest(value1, value2, operation);	
+	    	CsvOperationRequest csvRequest = new CsvOperationRequest(value1, value2, operation);		    		    
 	    	
 	    	ObjectMapper objectMapper = new ObjectMapper();	    	
 	    	String jsonRequest = objectMapper.writeValueAsString(csvRequest);
 	    	
 	    	try {
 	    		HttpResponse response = webClient.sendPostRequest(calculateServiceURL, jsonRequest);
-	    		
-	    		if(response.getStatusCode() == HttpURLConnection.HTTP_OK) {		    		
-		    		OperationResponse operationResponse = objectMapper.readValue(response.getBody(), OperationResponse.class);
-		    		
+	    			    		
+	    		if(response.getStatusCode() == HttpURLConnection.HTTP_OK) { 		
+		    		OperationResponse operationResponse = objectMapper.readValue(response.getBody(), OperationResponse.class);		    		
 		    		double result = operationResponse.getResult();
-		    		LOGGER.info("RESULT: " + result);		    		
 		    		
-		    		//WRITE VALUES IN THE DATABASE
+		    		//If the file name is too long, use substring to shorten it's length
+		    		String fileName = fileHandler.getFileName().length() > 100 ? fileHandler.getFileName().substring(0, 99) : fileHandler.getFileName();
+		    				    		
+		    		//Writes the values and the result in the database		    		
+	    			dbClient.executeUpdate("INSERT INTO operations (value1, value2, result, operation, date_time, file_name) VALUES(?,?,?,?,?,?)",
+											value1, value2, result, operation, new java.sql.Timestamp(new Date().getTime()), fileName);		    			    				 
 		    		
 		    		recordHasError = false;
 		    	}
@@ -85,42 +83,19 @@ public class CsvRecordHandler implements Runnable {
 	    	}	
 		
 		} catch(NumberFormatException e){    		
-    		LOGGER.info("Error sending post request: " + e.getMessage());
+    		LOGGER.info("Error parsing double value: " + e.getMessage());
+    		
+		} catch(JsonProcessingException e){    		
+    		LOGGER.error("Error serializing json request: " + e.getMessage());
     			
 		} catch(Exception e) {						
-			LOGGER.info("Error handling record from file \"" + fileName + "\":" 
-																		+ " value1=" + csvRecord.get("value1")
-																		+ " value2=" + csvRecord.get("value2")
-																		+ " operation=" + csvRecord.get("operation") 
-																		+ " error message=" + e.getMessage());						
+			LOGGER.error("Error handling record: " + " value1=" + csvRecord.get("value1")
+												   + " value2=" + csvRecord.get("value2")
+												   + " operation=" + csvRecord.get("operation") 
+												   + " error message=" + e.getMessage());						
 		}
 		
 		if(recordHasError)
-			writeRecordInErrorFile(csvRecord);
-	}
-	
-	private void writeRecordInErrorFile(CSVRecord csvRecord) {
-		synchronized(fileLock) {					
-			try {
-				Path errorPath = Paths.get(outputFolder + "\\UnresolvedRequests");						
-				if(!Files.exists(errorPath))
-					Files.createDirectory(errorPath);
-											
-				String newFilePath = errorPath + "\\" + fileName;
-				
-				CSVFormat csvFormat;
-				csvFormat = !Files.exists(Paths.get(newFilePath)) ? CSVFormat.DEFAULT.withHeader("value1", "value2", "operation").withDelimiter(';')
-																  : CSVFormat.DEFAULT.withDelimiter(';');				
-				
-				BufferedWriter writer = Files.newBufferedWriter(Paths.get(newFilePath), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-	            CSVPrinter csvPrinter = new CSVPrinter(writer, csvFormat);
-	            
-	            csvPrinter.printRecord(csvRecord.get("value1"), csvRecord.get("value2"), csvRecord.get("operation"));              
-	            csvPrinter.close();
-	            
-	        } catch (IOException e) {
-	        	LOGGER.info("Error writing unresolved record on file " + fileName + ":" + e.getMessage());   
-			}
-		}		
+			fileHandler.writeRecordInErrorFile(csvRecord);
 	}
 }
